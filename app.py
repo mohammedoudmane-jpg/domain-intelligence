@@ -322,7 +322,7 @@ if domains:
                 return "background-color: #f8d7da; color: #721c24"
         
         st.dataframe(
-            df_display.style.applymap(
+            df_display.style.map(
                 color_recommendation, subset=["recommendation"]
             ),
             use_container_width=True,
