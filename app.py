@@ -1,372 +1,189 @@
-"""
-Domain Analyzer Pro - Streamlit Web App
-"""
-
 import streamlit as st
-import re
 import pandas as pd
-import io
+import tldextract
+import re
+import os
+import json
+from openai import OpenAI
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+# ==========================================
+# ⚙️ إعدادات النظام والمفاتيح
+# ==========================================
+st.set_page_config(page_title="DomainSniper Pro", layout="wide", page_icon="🎯")
+st.title("🎯 DomainSniper Pro: Big Brother Edition")
+st.markdown("**المحرك الهجين:** فلترة خوارزمية صارمة + تحليل نية تجارية + تقييم AI عميق.")
 
-st.set_page_config(
-    page_title="Domain Analyzer Pro",
-    page_icon="🏆",
-    layout="wide"
-)
-
-# ============================================================
-# TITLE
-# ============================================================
-
-st.title("🏆 Domain Analyzer Pro")
-st.markdown("### تحليل الدومينات الاحترافي | Professional Domain Analysis")
-st.markdown("---")
-
-# ============================================================
-# FORBIDDEN WORDS
-# ============================================================
-
-FORBIDDEN_WORDS = {
-    "sex", "porn", "xxx", "escort", "slut", "tube", "cum", "dick",
-    "pussy", "ass", "fuck", "shit", "cunt", "whore", "bitch", "naked",
-    "horny", "fisting", "prostitute", "transvestite", "transgender",
-    "maga", "trump", "biden", "obama", "clinton", "google", "facebook",
-    "amazon", "microsoft", "apple", "netflix", "twitter", "instagram",
-    "youtube", "tiktok", "snapchat", "whatsapp", "telegram", "zoom"
-}
-
-# ============================================================
-# HOT KEYWORDS
-# ============================================================
-
-HOT_KEYWORDS = {
-    "ai": 15, "flow": 12, "token": 12, "protocol": 10,
-    "engine": 8, "analytics": 8, "vault": 7, "mate": 7,
-    "escrow": 9, "lead": 6, "bio": 6, "pay": 8, "finance": 7,
-    "capital": 7, "invest": 6, "cloud": 7, "data": 6,
-    "smart": 5, "tech": 5, "pro": 4, "elite": 6
-}
-
-# ============================================================
-# ANALYSIS FUNCTION
-# ============================================================
-
-def analyze_domain(domain):
-    domain_clean = domain.lower().strip()
-    
-    if domain_clean.endswith('.com'):
-        sld = domain_clean[:-4]
-    else:
-        sld = domain_clean.split('.')[0]
-    
-    length = len(sld)
-    has_hyphen = '-' in sld
-    has_number = bool(re.search(r'\d', sld))
-    words = re.findall(r'[a-z]+', sld.lower())
-    word_count = len(words)
-    
-    # Brand Score
-    brand_score = 50
-    
-    if 6 <= length <= 12:
-        brand_score += 20
-    elif length <= 8:
-        brand_score += 15
-    elif length <= 15:
-        brand_score += 5
-    else:
-        brand_score -= 10
-    
-    if not has_hyphen:
-        brand_score += 10
-    if not has_number:
-        brand_score += 5
-    if domain_clean.endswith('.com'):
-        brand_score += 20
-    if word_count <= 2:
-        brand_score += 10
-    
-    # Keywords
-    keyword_score = 0
-    found_keywords = []
-    for kw, score in HOT_KEYWORDS.items():
-        if kw in sld.lower():
-            keyword_score += score
-            found_keywords.append(kw)
-    
-    brand_score += keyword_score
-    brand_score = min(100, brand_score)
-    
-    # Commercial Score
-    commercial_score = 0
-    
-    if keyword_score >= 20:
-        commercial_score += 30
-    elif keyword_score >= 10:
-        commercial_score += 20
-    elif keyword_score >= 5:
-        commercial_score += 10
-    
-    commercial_words = {"pay", "buy", "sell", "trade", "invest", "fund", 
-                        "capital", "asset", "wealth", "money", "cash", "loan", 
-                        "credit", "finance", "insurance", "bank", "broker"}
-    if any(w in sld.lower() for w in commercial_words):
-        commercial_score += 20
-    
-    if domain_clean.endswith('.com'):
-        commercial_score += 10
-    
-    commercial_score = min(100, commercial_score)
-    
-    # Buyer Pool
-    buyer_score = 0
-    
-    large_pool = {"ai", "tech", "cloud", "data", "pay", "finance", 
-                  "health", "care", "auto", "home", "real", "estate"}
-    if any(w in sld.lower() for w in large_pool):
-        buyer_score += 20
-    
-    medium_pool = {"pro", "expert", "master", "elite", "prime", 
-                   "core", "max", "ultra", "mega", "hyper", "super"}
-    if any(w in sld.lower() for w in medium_pool):
-        buyer_score += 10
-    
-    buyer_score = min(100, buyer_score)
-    
-    # Legal Risk
-    legal_risk = "Low"
-    warnings = []
-    
-    forbidden_found = [w for w in FORBIDDEN_WORDS if w in sld.lower()]
-    if forbidden_found:
-        legal_risk = "HIGH"
-        warnings.append(f"Forbidden: {', '.join(forbidden_found)}")
-    
-    trademark_words = {"google", "amazon", "microsoft", "apple", "facebook", 
-                       "netflix", "twitter", "instagram", "youtube", "tiktok"}
-    trademark_found = [w for w in trademark_words if w in sld.lower()]
-    if trademark_found:
-        legal_risk = "HIGH"
-        warnings.append(f"Trademark: {', '.join(trademark_found)}")
-    
-    # Final Score
-    final_score = (brand_score + commercial_score + buyer_score) / 3
-    
-    if legal_risk == "HIGH":
-        final_score -= 40
-    elif legal_risk == "Medium":
-        final_score -= 15
-    
-    final_score = max(0, min(100, final_score))
-    
-    # Tier & Recommendation
-    if final_score >= 80:
-        tier = "Premium"
-        recommendation = "STRONG BUY"
-        price = "$2,000 - $8,000"
-        color = "🟢"
-    elif final_score >= 65:
-        tier = "Mid"
-        recommendation = "BUY"
-        price = "$500 - $2,000"
-        color = "🟡"
-    elif final_score >= 50:
-        tier = "Brandable"
-        recommendation = "MAYBE"
-        price = "$100 - $500"
-        color = "🟠"
-    else:
-        tier = "Low"
-        recommendation = "PASS"
-        price = "$0 - $100"
-        color = "🔴"
-    
-    # Buyers
-    buyers = []
-    if "ai" in sld.lower() or "flow" in sld.lower():
-        buyers.append("AI/ML companies")
-    if "pay" in sld.lower() or "finance" in sld.lower():
-        buyers.append("FinTech")
-    if "cloud" in sld.lower() or "data" in sld.lower():
-        buyers.append("Cloud/SaaS")
-    if "health" in sld.lower() or "care" in sld.lower():
-        buyers.append("Healthcare")
-    
-    return {
-        "domain": domain,
-        "score": round(final_score, 1),
-        "tier": tier,
-        "recommendation": recommendation,
-        "price": price,
-        "color": color,
-        "keywords": found_keywords,
-        "buyers": buyers,
-        "warnings": warnings,
-        "length": length,
-        "brand_score": brand_score,
-        "commercial_score": commercial_score,
-        "buyer_score": buyer_score,
-        "legal_risk": legal_risk
-    }
-
-# ============================================================
-# SIDEBAR - INPUT METHODS
-# ============================================================
-
-st.sidebar.header("📥 Input Methods")
-
-input_method = st.sidebar.radio(
-    "Choose input method:",
-    ["✏️ Text Input", "📄 Upload File", "📋 Paste List"]
-)
-
-domains = []
-
-if input_method == "✏️ Text Input":
-    domain_input = st.sidebar.text_input(
-        "Enter domain(s):",
-        placeholder="e.g., aiflowmate.com, tokenissuers.com"
-    )
-    if domain_input:
-        if ',' in domain_input:
-            domains = [d.strip() for d in domain_input.split(',') if d.strip()]
-        else:
-            domains = [domain_input.strip()]
-
-elif input_method == "📄 Upload File":
-    uploaded_file = st.sidebar.file_uploader(
-        "Upload domains file (.txt or .csv)",
-        type=["txt", "csv"]
-    )
-    if uploaded_file:
-        content = uploaded_file.read().decode('utf-8')
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(io.StringIO(content))
-            if 'domain' in df.columns:
-                domains = df['domain'].tolist()
-            else:
-                domains = df.iloc[:, 0].tolist()
-        else:
-            domains = [line.strip() for line in content.split('\n') if line.strip()]
-
-else:  # Paste List
-    pasted = st.sidebar.text_area(
-        "Paste your domains (one per line):",
-        height=200,
-        placeholder="aiflowmate.com\ntokenissuers.com\nveritad.com"
-    )
-    if pasted:
-        domains = [d.strip() for d in pasted.split('\n') if d.strip()]
-
-# ============================================================
-# MAIN CONTENT
-# ============================================================
-
-if domains:
-    st.sidebar.success(f"✅ {len(domains)} domains loaded")
-    
-    # Analyze button
-    if st.sidebar.button("🚀 Analyze", use_container_width=True):
-        
-        with st.spinner("Analyzing domains..."):
-            results = [analyze_domain(d) for d in domains]
-            results.sort(key=lambda x: x["score"], reverse=True)
-        
-        # ============================================================
-        # RESULTS
-        # ============================================================
-        
-        st.header("📊 Analysis Results")
-        st.markdown(f"**Total:** {len(results)} domains analyzed")
-        
-        # Summary stats
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            strong_buy = sum(1 for r in results if r["recommendation"] == "STRONG BUY")
-            st.metric("🟢 STRONG BUY", strong_buy)
-        with col2:
-            buy = sum(1 for r in results if r["recommendation"] == "BUY")
-            st.metric("🟡 BUY", buy)
-        with col3:
-            maybe = sum(1 for r in results if r["recommendation"] == "MAYBE")
-            st.metric("🟠 MAYBE", maybe)
-        with col4:
-            pass_ = sum(1 for r in results if r["recommendation"] == "PASS")
-            st.metric("🔴 PASS", pass_)
-        
-        st.markdown("---")
-        
-        # ============================================================
-        # RESULTS TABLE
-        # ============================================================
-        
-        # Create DataFrame for display
-        df_results = pd.DataFrame(results)
-        df_display = df_results[[
-            "domain", "score", "tier", "recommendation", "price",
-            "keywords", "buyers", "warnings"
-        ]]
-        
-        # Style the dataframe
-        def color_recommendation(val):
-            if val == "STRONG BUY":
-                return "background-color: #d4edda; color: #155724"
-            elif val == "BUY":
-                return "background-color: #fff3cd; color: #856404"
-            elif val == "MAYBE":
-                return "background-color: #ffe5cc; color: #cc7a00"
-            else:
-                return "background-color: #f8d7da; color: #721c24"
-        
-        st.dataframe(
-            df_display.style.map(
-                color_recommendation, subset=["recommendation"]
-            ),
-            use_container_width=True,
-            height=400
-        )
-        
-        # ============================================================
-        # DETAILED RESULTS
-        # ============================================================
-        
-        st.markdown("---")
-        st.subheader("🔍 Detailed Results")
-        
-        for i, r in enumerate(results[:10], 1):
-            with st.expander(f"{r['color']} {i}. {r['domain']} - Score: {r['score']}/100", expanded=(i <= 3)):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Tier:** {r['tier']}")
-                    st.write(f"**Recommendation:** {r['recommendation']}")
-                    st.write(f"**Price:** {r['price']}")
-                    st.write(f"**Length:** {r['length']} characters")
-                with col2:
-                    if r['keywords']:
-                        st.write(f"**Keywords:** {', '.join(r['keywords'])}")
-                    if r['buyers']:
-                        st.write(f"**Buyers:** {', '.join(r['buyers'])}")
-                    if r['warnings']:
-                        st.write(f"⚠️ **Warnings:** {'; '.join(r['warnings'])}")
-        
-        # ============================================================
-        # EXPORT
-        # ============================================================
-        
-        st.markdown("---")
-        st.subheader("📤 Export Results")
-        
-        csv = df_results.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv,
-            file_name="domain_analysis_results.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
+# إدخل مفتاح API
+api_key = st.sidebar.text_input("🔑 OpenAI API Key (اختياري)", type="password")
+client = None
+if api_key:
+    client = OpenAI(api_key=api_key)
 else:
-    st.info("👈 Enter domains in the sidebar and click **Analyze**")
+    st.sidebar.info("💡 يمكن استخدام الفلترة الخوارزمية المجانية بدون أدنى تكلفة وبدون مفتاح API.")
+
+# ==========================================
+# 🧠 محرك الفلترة الخوارزمية (The Ruthless Filter)
+# ==========================================
+def algorithmic_filter(domain):
+    """فلتر الأخ الأكبر: يرفض الدومينات الضعيفة فوراً بدون صرف أموال"""
+    try:
+        ext = tldextract.extract(domain)
+        sld = ext.domain.lower()
+        tld = ext.suffix.lower()
+        
+        # 1. فحص الامتداد (فقط .com)
+        if tld != 'com':
+            return False, "❌ ليس .COM"
+            
+        # 2. فحص الطول (أكثر من 16 حرف = مرفوض)
+        if len(sld) > 16:
+            return False, "❌ طويل جداً (>16 حرف)"
+            
+        # 3. فحص الشرطة والأرقام
+        if '-' in domain or any(char.isdigit() for char in sld):
+            return False, "❌ يحتوي شرطة/أرقام"
+            
+        # 4. فحص عدد الكلمات التقريبي
+        words = re.findall(r'[a-z]+', sld)
+        if len(words) > 3:
+            return False, "❌ أكثر من 3 كلمات"
+            
+        return True, "✅ اجتاز الفلتر الأولي"
+    except Exception as e:
+        return False, f"❌ خطأ: {str(e)}"
+
+# ==========================================
+# 💼 محرك النية التجارية (Commercial Intent Engine)
+# ==========================================
+COMMERCIAL_KEYWORDS = {
+    'ai': 15, 'tech': 10, 'soft': 10, 'data': 12, 'cloud': 10,
+    'lead': 12, 'sales': 10, 'market': 10, 'seo': 12, 'ads': 8,
+    'roof': 15, 'plumb': 15, 'build': 12, 'home': 8, 'law': 15,
+    'med': 12, 'dent': 12, 'health': 10, 'care': 8, 'fit': 8,
+    'shop': 8, 'store': 8, 'buy': 10, 'sell': 10, 'trade': 10,
+    'crypto': 12, 'coin': 10, 'token': 10, 'nft': 8, 'web3': 10,
+    'auto': 10, 'car': 8, 'motor': 10, 'gear': 8, 'tool': 10,
+    'pay': 12, 'flow': 12, 'vault': 10, 'mate': 8
+}
+
+def analyze_commercial_intent(sld):
+    """يبحث عن كلمات تجارية داخل الدومين ويعطيه درجة"""
+    score = 0
+    found_keywords = []
+    for kw, weight in COMMERCIAL_KEYWORDS.items():
+        if kw in sld.lower():
+            score += weight
+            found_keywords.append(kw)
+    return score, found_keywords
+
+# ==========================================
+# 🤖 محرك التقييم العميق (AI Deep Valuation)
+# ==========================================
+def ai_deep_valuation(domain, algo_status, comm_score, keywords):
+    if not client:
+        return {"Verdict": "PASSED_FILTER", "Reason": "مجاني (بدون API)"}
+        
+    prompt = f"""
+    أنت مستثمر دومينات محترف وصارم للغاية (Big Brother Persona).
+    قم بتحليل الدومين: {domain}
+    
+    البيانات الأولية:
+    - حالة الفلتر الخوارزمي: {algo_status}
+    - درجة النية التجارية: {comm_score}/100
+    - الكلمات المفتاحية المكتشفة: {', '.join(keywords) if keywords else 'لا يوجد'}
+    
+    بناءً على هذه البيانات، أجب بصيغة JSON ONLY بالمعايير التالية:
+    1. "Project_Value": (1-10) هل يصلح كاسم لمشروع حقيقي؟
+    2. "Buyer_Pool": (Very Low / Low / Medium / High / Very High)
+    3. "End_Users": قائمة بـ 3 أنواع شركات قد تشتريه.
+    4. "Trademark_Risk": (Low / Medium / High)
+    5. "Est_Price_Wholesale": سعر الجملة المتوقع (مثال: $50-$150)
+    6. "Est_Price_EndUser": سعر المستخدم النهائي (مثال: $800-$2500)
+    7. "Verdict": (STRONG BUY / BUY / MAYBE / PASS) - كن قاسياً.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        return {"Verdict": "ERROR", "Reason": str(e)}
+
+# ==========================================
+# 🖥️ واجهة المستخدم (The UI)
+# ==========================================
+input_method = st.sidebar.radio("📥 طريقة الإدخال", ["Text Input", "Paste List"])
+
+domains_text = ""
+if input_method == "Text Input":
+    domains_text = st.sidebar.text_area("أدخل الدومينات (مفصولة بفواصل)", "aiflowmate.com, roofingworkers.com")
+else:
+    domains_text = st.sidebar.text_area("الصق القائمة (كل دومين في سطر)", "aiflowmate.com\nroofingworkers.com\nvinylresin.com")
+
+if st.sidebar.button("🚀 RUN RUTHLESS SCAN", use_container_width=True):
+    raw_domains = re.split(r'[,\n]', domains_text)
+    domains = [d.strip().lower() for d in raw_domains if d.strip()]
+    
+    if not domains:
+        st.error("⚠️ يرجى إدخال دومينات للتحليل.")
+    else:
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, domain in enumerate(domains):
+            status_text.text(f"🔍 جاري تحليل: {domain}...")
+            
+            # 1. الفلتر الخوارزمي
+            passed, algo_status = algorithmic_filter(domain)
+            
+            # 2. تحليل النية التجارية
+            ext = tldextract.extract(domain)
+            comm_score, keywords = analyze_commercial_intent(ext.domain)
+            
+            # 3. التقييم بالـ AI (إن وجد)
+            ai_result = {}
+            if passed or comm_score > 20:
+                if client:
+                    ai_result = ai_deep_valuation(domain, algo_status, comm_score, keywords)
+                else:
+                    verdict_status = "STRONG BUY" if comm_score >= 25 else ("BUY" if comm_score >= 12 else "MAYBE")
+                    ai_result = {"Verdict": verdict_status, "Reason": "Algorithmic Match"}
+            else:
+                ai_result = {"Verdict": "PASS", "Reason": "Rejected by Algorithmic Filter"}
+                
+            results.append({
+                "Domain": domain,
+                "Algo Status": algo_status,
+                "Comm Score": comm_score,
+                "Keywords": ", ".join(keywords),
+                "Project Value": ai_result.get("Project_Value", "N/A"),
+                "Buyer Pool": ai_result.get("Buyer_Pool", "N/A"),
+                "End Users": str(ai_result.get("End_Users", "N/A")),
+                "TM Risk": ai_result.get("Trademark_Risk", "N/A"),
+                "Wholesale": ai_result.get("Est_Price_Wholesale", "N/A"),
+                "End User": ai_result.get("Est_Price_EndUser", "N/A"),
+                "Verdict": ai_result.get("Verdict", "PASS")
+            })
+            
+            progress_bar.progress((i + 1) / len(domains))
+            
+        status_text.text("✅ اكتمل التحليل!")
+        
+        df = pd.DataFrame(results)
+        
+        def color_verdict(val):
+            if val == 'STRONG BUY': return 'background-color: #28a745; color: white'
+            elif val == 'BUY': return 'background-color: #17a2b8; color: white'
+            elif val == 'MAYBE': return 'background-color: #ffc107; color: black'
+            elif val == 'PASS': return 'background-color: #dc3545; color: white'
+            return ''
+            
+        st.dataframe(df.style.map(color_verdict, subset=['Verdict']), use_container_width=True)
+        
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Report (CSV)", csv, "domain_sniper_report.csv", "text/csv", use_container_width=True)
