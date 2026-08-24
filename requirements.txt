@@ -1,0 +1,7 @@
+streamlit
+pandas
+tldextract
+openai
+python-whois
+requests
+beautifulsoup4
